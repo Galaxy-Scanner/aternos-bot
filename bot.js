@@ -1,123 +1,102 @@
 const mineflayer = require('mineflayer')
 
-function createBot() {
-
-const bot = mineflayer.createBot({
-  host: 'CrayCrim-SMP.aternos.me',
+const config = {
+  host: 'CrayCrim-SMP.aternos.me', // DEINE SERVER IP
   port: 25565,
-  username: 'CrayCrim-SMP-Training-Bot',
-  version: '1.21.5'
-})
+  username: 'GrimTrainingBot',
+  version: '1.21.5',
+  auth: 'offline' // WICHTIG für Aternos cracked
+}
 
-/* =============================
-   RECONNECT SYSTEM
-============================= */
+let bot
 
-bot.on('end', () => {
-  console.log('🔄 Reconnect in 5 Sekunden...')
-  setTimeout(createBot, 5000)
-})
+function startBot() {
 
-bot.on('error', err => {
-  if (err.code === 'ECONNRESET') {
-    console.log('🔌 Verbindung kurz verloren (normal)')
-    return
+  bot = mineflayer.createBot(config)
+
+  // =============================
+  // JOIN
+  // =============================
+  bot.on('spawn', () => {
+    console.log('✅ Bot ist gespawnt!')
+    startRandomMovement()
+  })
+
+  bot.on('login', () => {
+    console.log('✅ Eingeloggt')
+  })
+
+  // =============================
+  // RANDOM MOVEMENT
+  // =============================
+  function startRandomMovement() {
+
+    setInterval(() => {
+      if (!bot.entity) return
+
+      // alles stoppen
+      bot.setControlState('forward', false)
+      bot.setControlState('back', false)
+      bot.setControlState('left', false)
+      bot.setControlState('right', false)
+      bot.setControlState('jump', false)
+      bot.setControlState('sprint', false)
+
+      // zufällige Bewegung wählen
+      const moves = ['forward','back','left','right']
+      const move = moves[Math.floor(Math.random() * moves.length)]
+
+      bot.setControlState(move, true)
+
+      // manchmal springen (wirkt menschlicher)
+      if (Math.random() < 0.4) {
+        bot.setControlState('jump', true)
+        setTimeout(() => {
+          bot.setControlState('jump', false)
+        }, 400)
+      }
+
+      // manchmal sprinten
+      if (Math.random() < 0.3) {
+        bot.setControlState('sprint', true)
+        setTimeout(() => {
+          bot.setControlState('sprint', false)
+        }, 2000)
+      }
+
+      // zufällig schauen (sehr wichtig für Grim)
+      const yaw = Math.random() * Math.PI * 2
+      const pitch = (Math.random() - 0.5) * 0.6
+      bot.look(yaw, pitch, true)
+
+    }, 3000) // alle 3 Sekunden neue Bewegung
   }
-  console.log('⚠️ Fehler:', err.message)
-})
 
-/* =============================
-   SPAWN
-============================= */
+  // =============================
+  // FEHLER / RECONNECT
+  // =============================
+  bot.on('end', () => {
+    console.log('🔌 Verbindung verloren')
+    reconnect()
+  })
 
-bot.once('spawn', () => {
-  console.log('✅ Bot ist gespawnt!')
+  bot.on('kicked', (reason) => {
+    console.log('❌ Kick:', reason)
+    reconnect()
+  })
 
-  // kurz warten → wirkt menschlich
-  setTimeout(() => {
-    randomMovement()
-    watchPlayers()
-    shieldAI()
-  }, 8000)
-})
-
-/* =============================
-   RANDOM MOVEMENT
-============================= */
-
-function randomMovement() {
-  setInterval(() => {
-
-    const actions = ['forward','back','left','right','jump','none']
-    const action = actions[Math.floor(Math.random()*actions.length)]
-
-    bot.clearControlStates()
-
-    if(action !== 'none'){
-      bot.setControlState(action,true)
-
-      setTimeout(() => {
-        bot.setControlState(action,false)
-      }, 1500 + Math.random()*2000)
+  bot.on('error', (err) => {
+    if (err.code === 'ECONNRESET') {
+      console.log('🔌 Verbindung kurz verloren (normal)')
+    } else {
+      console.log('⚠️ Fehler:', err.message)
     }
-
-  }, 4000)
-}
-
-/* =============================
-   LOOK AT PLAYERS + WALK TO THEM
-============================= */
-
-function watchPlayers() {
-  setInterval(() => {
-
-    const player = bot.nearestEntity(e => e.type === 'player' && e.username !== bot.username)
-    if(!player) return
-
-    bot.lookAt(player.position.offset(0,1.6,0), true)
-
-    const distance = bot.entity.position.distanceTo(player.position)
-
-    // langsam hingehen
-    if(distance > 3 && distance < 10){
-      bot.setControlState('forward', true)
-
-      setTimeout(()=>{
-        bot.setControlState('forward', false)
-      }, 1200)
-    }
-
-  }, 1500)
-}
-
-/* =============================
-   AUTO SHIELD WHEN HIT
-============================= */
-
-function shieldAI() {
-
-  bot.on('entityHurt', (entity) => {
-    if(entity !== bot.entity) return
-
-    console.log('🛡️ Angegriffen → Blocken!')
-
-    bot.activateItem(true)
-
-    setTimeout(()=>{
-      bot.deactivateItem()
-    }, 2000)
   })
 }
 
-/* =============================
-   AUTO RESPAWN
-============================= */
-
-bot.on('death', () => {
-  console.log('💀 Bot gestorben → Respawn...')
-  setTimeout(() => bot.respawn(), 2000)
-})
-
+function reconnect() {
+  console.log('🔄 Reconnect in 5 Sekunden...')
+  setTimeout(startBot, 5000)
 }
 
-createBot()
+startBot()
