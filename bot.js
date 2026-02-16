@@ -1,13 +1,11 @@
 const mineflayer = require('mineflayer')
-const { pathfinder, Movements, goals } = require('mineflayer-pathfinder')
-const pvp = require('mineflayer-pvp').plugin
 
 const config = {
-  host: 'CrayCrim-SMP.aternos.me',
+  host: 'CrayCrim-SMP.aternos.me', // DEINE SERVER IP
   port: 25565,
   username: 'GrimTrainingBot',
   version: '1.21.5',
-  auth: 'offline'
+  auth: 'offline' // WICHTIG für Aternos cracked
 }
 
 let bot
@@ -16,113 +14,88 @@ function startBot() {
 
   bot = mineflayer.createBot(config)
 
-  bot.loadPlugin(pathfinder)
-  bot.loadPlugin(pvp)
-
-  bot.once('spawn', () => {
-    console.log("✅ Bot gespawnt")
-
-    const mcData = require('minecraft-data')(bot.version)
-    const defaultMove = new Movements(bot, mcData)
-    bot.pathfinder.setMovements(defaultMove)
-
-    startBrain()
+  // =============================
+  // JOIN
+  // =============================
+  bot.on('spawn', () => {
+    console.log('✅ Bot ist gespawnt!')
+    startRandomMovement()
   })
 
-  // ==========================
-  // PvP KI
-  // ==========================
-  function startBrain() {
+  bot.on('login', () => {
+    console.log('✅ Eingeloggt')
+  })
+
+  // =============================
+  // RANDOM MOVEMENT
+  // =============================
+  function startRandomMovement() {
 
     setInterval(() => {
-
       if (!bot.entity) return
 
-      // nächsten Spieler suchen
-      const player = getClosestPlayer()
+      // alles stoppen
+      bot.setControlState('forward', false)
+      bot.setControlState('back', false)
+      bot.setControlState('left', false)
+      bot.setControlState('right', false)
+      bot.setControlState('jump', false)
+      bot.setControlState('sprint', false)
 
-      if (!player) return
+      // zufällige Bewegung wählen
+      const moves = ['forward','back','left','right']
+      const move = moves[Math.floor(Math.random() * moves.length)]
 
-      const target = player.entity
+      bot.setControlState(move, true)
 
-      // legit anschauen (SEHR wichtig für Grim)
-      bot.lookAt(target.position.offset(0, 1.5, 0), true)
-
-      const distance = bot.entity.position.distanceTo(target.position)
-
-      // hinterherlaufen
-      if (distance > 3) {
-        bot.pathfinder.setGoal(
-          new goals.GoalFollow(target, 2),
-          true
-        )
+      // manchmal springen (wirkt menschlicher)
+      if (Math.random() < 0.4) {
+        bot.setControlState('jump', true)
+        setTimeout(() => {
+          bot.setControlState('jump', false)
+        }, 400)
       }
 
-      // angreifen wenn nah
-      if (distance <= 3.2) {
-        bot.pvp.attack(target)
+      // manchmal sprinten
+      if (Math.random() < 0.3) {
+        bot.setControlState('sprint', true)
+        setTimeout(() => {
+          bot.setControlState('sprint', false)
+        }, 2000)
       }
 
-      // strafing movement (spieler-like)
-      randomStrafe()
+      // zufällig schauen (sehr wichtig für Grim)
+      const yaw = Math.random() * Math.PI * 2
+      const pitch = (Math.random() - 0.5) * 0.6
+      bot.look(yaw, pitch, true)
 
-    }, 800)
+    }, 3000) // alle 3 Sekunden neue Bewegung
   }
 
-  function getClosestPlayer() {
-    let closest = null
-    let minDist = Infinity
+  // =============================
+  // FEHLER / RECONNECT
+  // =============================
+  bot.on('end', () => {
+    console.log('🔌 Verbindung verloren')
+    reconnect()
+  })
 
-    for (const name in bot.players) {
-      if (name === bot.username) continue
-
-      const player = bot.players[name]
-      if (!player.entity) continue
-
-      const dist = bot.entity.position.distanceTo(player.entity.position)
-
-      if (dist < minDist) {
-        minDist = dist
-        closest = player
-      }
-    }
-    return closest
-  }
-
-  // seitlich bewegen wie echter PvP Spieler
-  function randomStrafe() {
-    const r = Math.random()
-
-    bot.setControlState('left', false)
-    bot.setControlState('right', false)
-
-    if (r < 0.3) bot.setControlState('left', true)
-    else if (r < 0.6) bot.setControlState('right', true)
-
-    if (Math.random() < 0.25) {
-      bot.setControlState('jump', true)
-      setTimeout(() => bot.setControlState('jump', false), 250)
-    }
-  }
-
-  // ==========================
-  // Reconnect System
-  // ==========================
-  bot.on('end', reconnect)
-
-  bot.on('kicked', (r) => {
-    console.log("❌ Kick:", r)
+  bot.on('kicked', (reason) => {
+    console.log('❌ Kick:', reason)
     reconnect()
   })
 
   bot.on('error', (err) => {
-    if (err.code !== 'ECONNRESET')
-      console.log("⚠️", err)
+    if (err.code === 'ECONNRESET') {
+      console.log('🔌 Verbindung kurz verloren (normal)')
+    } else {
+      console.log('⚠️ Fehler:', err.message)
+    }
   })
 }
 
 function reconnect() {
-  console.log("🔄 Reconnect in 5 Sekunden...")
+  console.log('🔄 Reconnect in 5 Sekunden...')
   setTimeout(startBot, 5000)
 }
 
