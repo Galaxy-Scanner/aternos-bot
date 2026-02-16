@@ -1,99 +1,158 @@
 const mineflayer = require('mineflayer')
+const { pathfinder, Movements, goals } = require('mineflayer-pathfinder')
+const pvp = require('mineflayer-pvp').plugin
 
 const config = {
-  host: 'CrayCrim-SMP.aternos.me', // DEINE SERVER IP
+  host: 'CrayCrim-SMP.aternos.me',
   port: 25565,
-  username: 'DrDiddynut',
+  username: 'GrimTrainingBot',
   version: '1.21.5',
-  auth: 'offline' // WICHTIG für Aternos cracked
+  auth: 'offline'
 }
 
 let bot
 
 function startBot() {
+
   bot = mineflayer.createBot(config)
 
-  // =============================
-  // JOIN
-  // =============================
-  bot.on('spawn', () => {
-    console.log('✅ Bot ist gespawnt!')
-    startRandomMovement()
+  bot.loadPlugin(pathfinder)
+  bot.loadPlugin(pvp)
+
+  bot.once('spawn', () => {
+    console.log("✅ Bot gespawnt")
+
+    const mcData = require('minecraft-data')(bot.version)
+    bot.pathfinder.setMovements(new Movements(bot, mcData))
+
+    startAI()
   })
 
-  bot.on('login', () => {
-    console.log('✅ Eingeloggt')
-  })
+  // ================= AI =================
 
-  // =============================
-  // RANDOM MOVEMENT
-  // =============================
-  function startRandomMovement() {
+  function startAI() {
     setInterval(() => {
+
       if (!bot.entity) return
 
-      // alles stoppen
-      bot.setControlState('forward', false)
-      bot.setControlState('back', false)
-      bot.setControlState('left', false)
-      bot.setControlState('right', false)
-      bot.setControlState('jump', false)
-      bot.setControlState('sprint', false)
+      // 1️⃣ Spieler suchen
+      let target = getClosestPlayer()
 
-      // zufällige Bewegung wählen
-      const moves = ['forward','back','left','right']
-      const move = moves[Math.floor(Math.random() * moves.length)]
-
-      bot.setControlState(move, true)
-
-      // manchmal springen (wirkt menschlicher)
-      if (Math.random() < 0.4) {
-        bot.setControlState('jump', true)
-        setTimeout(() => {
-          bot.setControlState('jump', false)
-        }, 400)
+      // 2️⃣ Wenn kein Spieler → Mob suchen
+      if (!target) {
+        target = getClosestMob()
       }
 
-      // manchmal sprinten
-      if (Math.random() < 0.3) {
-        bot.setControlState('sprint', true)
-        setTimeout(() => {
-          bot.setControlState('sprint', false)
-        }, 2000)
-      }
+      if (!target) return
 
-      // zufällig schauen (sehr wichtig für Grim)
-      const yaw = Math.random() * Math.PI * 2
-      const pitch = (Math.random() - 0.5) * 0.6
-      bot.look(yaw, pitch, true)
+      fightTarget(target)
 
-    }, 3000) // alle 3 Sekunden neue Bewegung
+    }, 900)
   }
 
-  // =============================
-  // FEHLER / RECONNECT
-  // =============================
-  bot.on('end', () => {
-    console.log('🔌 Verbindung verloren')
-    reconnect()
-  })
+  // ---------- Kampf ----------
+  function fightTarget(target) {
 
-  bot.on('kicked', (reason) => {
-    console.log('❌ Kick:', reason)
+    const distance =
+      bot.entity.position.distanceTo(target.position)
+
+    // legit anschauen
+    bot.lookAt(target.position.offset(0, 1.5, 0), true)
+
+    // folgen
+    if (distance > 3) {
+      bot.pathfinder.setGoal(
+        new goals.GoalFollow(target, 2),
+        true
+      )
+    }
+
+    // schlagen
+    if (distance <= 3.2) {
+      bot.pvp.attack(target)
+    }
+
+    randomMovement()
+  }
+
+  // ---------- Spieler ----------
+  function getClosestPlayer() {
+    let closest = null
+    let dist = Infinity
+
+    for (const name in bot.players) {
+      if (name === bot.username) continue
+
+      const p = bot.players[name]
+      if (!p.entity) continue
+
+      const d = bot.entity.position.distanceTo(p.entity.position)
+
+      if (d < dist) {
+        dist = d
+        closest = p.entity
+      }
+    }
+    return closest
+  }
+
+  // ---------- Mobs ----------
+  function getClosestMob() {
+
+    const mobs = bot.entities
+
+    let closest = null
+    let dist = Infinity
+
+    for (const id in mobs) {
+      const e = mobs[id]
+
+      if (e.type !== 'mob') continue
+
+      const d = bot.entity.position.distanceTo(e.position)
+
+      if (d < dist && d < 15) {
+        dist = d
+        closest = e
+      }
+    }
+    return closest
+  }
+
+  // ---------- Movement ----------
+  function randomMovement() {
+
+    bot.setControlState('left', false)
+    bot.setControlState('right', false)
+
+    const r = Math.random()
+
+    if (r < 0.3) bot.setControlState('left', true)
+    else if (r < 0.6) bot.setControlState('right', true)
+
+    if (Math.random() < 0.25) {
+      bot.setControlState('jump', true)
+      setTimeout(() => bot.setControlState('jump', false), 250)
+    }
+  }
+
+  // ================= reconnect =================
+
+  bot.on('end', reconnect)
+
+  bot.on('kicked', (r) => {
+    console.log("❌ Kick:", r)
     reconnect()
   })
 
   bot.on('error', (err) => {
-    if (err.code === 'ECONNRESET') {
-      console.log('🔌 Verbindung kurz verloren (normal)')
-    } else {
-      console.log('⚠️ Fehler:', err.message)
-    }
+    if (err.code !== 'ECONNRESET')
+      console.log(err)
   })
 }
 
 function reconnect() {
-  console.log('🔄 Reconnect in 5 Sekunden...')
+  console.log("🔄 Reconnect...")
   setTimeout(startBot, 5000)
 }
 
