@@ -5,7 +5,7 @@ const pvp = require('mineflayer-pvp').plugin
 const config = {
   host: 'CrayCrim-SMP.aternos.me',
   port: 25565,
-  username: 'DrDonutt',
+  username: 'CrayCrim-AFK-BOT',
   version: '1.21.5',
   auth: 'offline'
 }
