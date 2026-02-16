@@ -5,7 +5,7 @@ const pvp = require('mineflayer-pvp').plugin
 const config = {
   host: 'CrayCrim-SMP.aternos.me',
   port: 25565,
-  username: 'GrimTrainingBot',
+  username: 'DrDonutt',
   version: '1.21.5',
   auth: 'offline'
 }
@@ -23,109 +23,78 @@ function startBot() {
     console.log("✅ Bot gespawnt")
 
     const mcData = require('minecraft-data')(bot.version)
-    bot.pathfinder.setMovements(new Movements(bot, mcData))
+    const defaultMove = new Movements(bot, mcData)
+    bot.pathfinder.setMovements(defaultMove)
 
-    startAI()
+    startBrain()
   })
 
-  // ================= AI =================
+  // ==========================
+  // PvP KI
+  // ==========================
+  function startBrain() {
 
-  function startAI() {
     setInterval(() => {
 
       if (!bot.entity) return
 
-      // 1️⃣ Spieler suchen
-      let target = getClosestPlayer()
+      // nächsten Spieler suchen
+      const player = getClosestPlayer()
 
-      // 2️⃣ Wenn kein Spieler → Mob suchen
-      if (!target) {
-        target = getClosestMob()
+      if (!player) return
+
+      const target = player.entity
+
+      // legit anschauen (SEHR wichtig für Grim)
+      bot.lookAt(target.position.offset(0, 1.5, 0), true)
+
+      const distance = bot.entity.position.distanceTo(target.position)
+
+      // hinterherlaufen
+      if (distance > 3) {
+        bot.pathfinder.setGoal(
+          new goals.GoalFollow(target, 2),
+          true
+        )
       }
 
-      if (!target) return
+      // angreifen wenn nah
+      if (distance <= 3.2) {
+        bot.pvp.attack(target)
+      }
 
-      fightTarget(target)
+      // strafing movement (spieler-like)
+      randomStrafe()
 
-    }, 900)
+    }, 800)
   }
 
-  // ---------- Kampf ----------
-  function fightTarget(target) {
-
-    const distance =
-      bot.entity.position.distanceTo(target.position)
-
-    // legit anschauen
-    bot.lookAt(target.position.offset(0, 1.5, 0), true)
-
-    // folgen
-    if (distance > 3) {
-      bot.pathfinder.setGoal(
-        new goals.GoalFollow(target, 2),
-        true
-      )
-    }
-
-    // schlagen
-    if (distance <= 3.2) {
-      bot.pvp.attack(target)
-    }
-
-    randomMovement()
-  }
-
-  // ---------- Spieler ----------
   function getClosestPlayer() {
     let closest = null
-    let dist = Infinity
+    let minDist = Infinity
 
     for (const name in bot.players) {
       if (name === bot.username) continue
 
-      const p = bot.players[name]
-      if (!p.entity) continue
+      const player = bot.players[name]
+      if (!player.entity) continue
 
-      const d = bot.entity.position.distanceTo(p.entity.position)
+      const dist = bot.entity.position.distanceTo(player.entity.position)
 
-      if (d < dist) {
-        dist = d
-        closest = p.entity
+      if (dist < minDist) {
+        minDist = dist
+        closest = player
       }
     }
     return closest
   }
 
-  // ---------- Mobs ----------
-  function getClosestMob() {
-
-    const mobs = bot.entities
-
-    let closest = null
-    let dist = Infinity
-
-    for (const id in mobs) {
-      const e = mobs[id]
-
-      if (e.type !== 'mob') continue
-
-      const d = bot.entity.position.distanceTo(e.position)
-
-      if (d < dist && d < 15) {
-        dist = d
-        closest = e
-      }
-    }
-    return closest
-  }
-
-  // ---------- Movement ----------
-  function randomMovement() {
+  // seitlich bewegen wie echter PvP Spieler
+  function randomStrafe() {
+    const r = Math.random()
 
     bot.setControlState('left', false)
     bot.setControlState('right', false)
-
-    const r = Math.random()
 
     if (r < 0.3) bot.setControlState('left', true)
     else if (r < 0.6) bot.setControlState('right', true)
@@ -136,8 +105,9 @@ function startBot() {
     }
   }
 
-  // ================= reconnect =================
-
+  // ==========================
+  // Reconnect System
+  // ==========================
   bot.on('end', reconnect)
 
   bot.on('kicked', (r) => {
@@ -147,12 +117,12 @@ function startBot() {
 
   bot.on('error', (err) => {
     if (err.code !== 'ECONNRESET')
-      console.log(err)
+      console.log("⚠️", err)
   })
 }
 
 function reconnect() {
-  console.log("🔄 Reconnect...")
+  console.log("🔄 Reconnect in 5 Sekunden...")
   setTimeout(startBot, 5000)
 }
 
