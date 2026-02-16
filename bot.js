@@ -3,7 +3,7 @@ const mineflayer = require('mineflayer')
 const config = {
   host: 'CrayCrim-SMP.aternos.me', // DEINE SERVER IP
   port: 25565,
-  username: 'GrimTrainingBot',
+  username: 'DrDiddynut',
   version: '1.21.5',
   auth: 'offline' // WICHTIG für Aternos cracked
 }
