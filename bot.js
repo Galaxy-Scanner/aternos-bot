@@ -4,44 +4,71 @@ function startBot() {
 
   const bot = mineflayer.createBot({
     host: 'CrayCrim-SMP.aternos.me',
-    port: 25565,
     username: 'AFK_Bot',
-    auth: 'offline',
-    version: '1.20.4',
-    checkTimeoutInterval: 60 * 1000
-  })
-
-  bot.on('login', () => {
-    console.log('✅ Eingeloggt')
+    version: false,
+    auth: 'offline'
   })
 
   bot.on('spawn', () => {
     console.log('✅ Bot ist gespawnt!')
 
-    // leichte Bewegung gegen AFK
+    randomMovement()
+    shieldLoop()
+  })
+
+  // ---------------------------
+  // REALISTISCHE BEWEGUNG
+  // ---------------------------
+  function randomMovement() {
+
     setInterval(() => {
-      bot.look(bot.entity.yaw + 0.5, 0, true)
-      bot.setControlState('jump', true)
 
+      // alte Bewegung stoppen
+      bot.clearControlStates()
+
+      const actions = ['forward','back','left','right','jump','idle']
+      const action = actions[Math.floor(Math.random()*actions.length)]
+
+      if (action !== 'idle') {
+        bot.setControlState(action, true)
+      }
+
+      // zufällig schauen (wie echter Spieler)
+      const yaw = Math.random() * Math.PI * 2
+      const pitch = (Math.random() - 0.5) * 0.6
+      bot.look(yaw, pitch, true)
+
+      // Bewegung nach kurzer Zeit stoppen
       setTimeout(() => {
-        bot.setControlState('jump', false)
-      }, 500)
+        bot.clearControlStates()
+      }, 2000 + Math.random()*2000)
 
-    }, 25000)
-  })
+    }, 4000)
+  }
 
-  bot.on('kicked', (reason) => {
-    console.log('❌ Kick Grund:', reason)
-  })
+  // ---------------------------
+  // SCHILD BENUTZEN
+  // ---------------------------
+  function shieldLoop() {
 
-  bot.on('error', (err) => {
-    console.log('⚠️ Fehler:', err.message)
-  })
+    setInterval(() => {
+      try {
+        bot.activateItem() // Schild hoch
+        setTimeout(() => bot.deactivateItem(), 1500)
+      } catch {}
+    }, 3000)
+  }
 
+  // reconnect wenn kick
   bot.on('end', () => {
     console.log('🔄 Reconnect...')
-    setTimeout(startBot, 7000)
+    setTimeout(startBot, 5000)
+  })
+
+  bot.on('error', err => {
+    console.log('⚠️ Fehler:', err.message)
   })
 }
 
 startBot()
+
