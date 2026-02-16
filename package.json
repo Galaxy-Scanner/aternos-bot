@@ -6,9 +6,5 @@
     "start": "node bot.js"
   },
   "type": "commonjs",
-  "dependencies": {
-    "mineflayer": "^4.35.0",
-    "mineflayer-pvp": "^1.3.2"
-  }
+  "dependencies": {}
 }
-
