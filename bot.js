@@ -1,74 +1,123 @@
 const mineflayer = require('mineflayer')
 
-function startBot() {
+function createBot() {
 
-  const bot = mineflayer.createBot({
-    host: 'CrayCrim-SMP.aternos.me',
-    username: 'AFK_Bot',
-    version: false,
-    auth: 'offline'
-  })
+const bot = mineflayer.createBot({
+  host: 'CrayCrim-SMP.aternos.me',
+  port: 25565,
+  username: 'CrayCrim-SMP-Training-Bot',
+  version: '1.21.5'
+})
 
-  bot.on('spawn', () => {
-    console.log('✅ Bot ist gespawnt!')
+/* =============================
+   RECONNECT SYSTEM
+============================= */
 
+bot.on('end', () => {
+  console.log('🔄 Reconnect in 5 Sekunden...')
+  setTimeout(createBot, 5000)
+})
+
+bot.on('error', err => {
+  if (err.code === 'ECONNRESET') {
+    console.log('🔌 Verbindung kurz verloren (normal)')
+    return
+  }
+  console.log('⚠️ Fehler:', err.message)
+})
+
+/* =============================
+   SPAWN
+============================= */
+
+bot.once('spawn', () => {
+  console.log('✅ Bot ist gespawnt!')
+
+  // kurz warten → wirkt menschlich
+  setTimeout(() => {
     randomMovement()
-    shieldLoop()
-  })
+    watchPlayers()
+    shieldAI()
+  }, 8000)
+})
 
-  // ---------------------------
-  // REALISTISCHE BEWEGUNG
-  // ---------------------------
-  function randomMovement() {
+/* =============================
+   RANDOM MOVEMENT
+============================= */
 
-    setInterval(() => {
+function randomMovement() {
+  setInterval(() => {
 
-      // alte Bewegung stoppen
-      bot.clearControlStates()
+    const actions = ['forward','back','left','right','jump','none']
+    const action = actions[Math.floor(Math.random()*actions.length)]
 
-      const actions = ['forward','back','left','right','jump','idle']
-      const action = actions[Math.floor(Math.random()*actions.length)]
+    bot.clearControlStates()
 
-      if (action !== 'idle') {
-        bot.setControlState(action, true)
-      }
+    if(action !== 'none'){
+      bot.setControlState(action,true)
 
-      // zufällig schauen (wie echter Spieler)
-      const yaw = Math.random() * Math.PI * 2
-      const pitch = (Math.random() - 0.5) * 0.6
-      bot.look(yaw, pitch, true)
-
-      // Bewegung nach kurzer Zeit stoppen
       setTimeout(() => {
-        bot.clearControlStates()
-      }, 2000 + Math.random()*2000)
+        bot.setControlState(action,false)
+      }, 1500 + Math.random()*2000)
+    }
 
-    }, 4000)
-  }
+  }, 4000)
+}
 
-  // ---------------------------
-  // SCHILD BENUTZEN
-  // ---------------------------
-  function shieldLoop() {
+/* =============================
+   LOOK AT PLAYERS + WALK TO THEM
+============================= */
 
-    setInterval(() => {
-      try {
-        bot.activateItem() // Schild hoch
-        setTimeout(() => bot.deactivateItem(), 1500)
-      } catch {}
-    }, 3000)
-  }
+function watchPlayers() {
+  setInterval(() => {
 
-  // reconnect wenn kick
-  bot.on('end', () => {
-    console.log('🔄 Reconnect...')
-    setTimeout(startBot, 5000)
-  })
+    const player = bot.nearestEntity(e => e.type === 'player' && e.username !== bot.username)
+    if(!player) return
 
-  bot.on('error', err => {
-    console.log('⚠️ Fehler:', err.message)
+    bot.lookAt(player.position.offset(0,1.6,0), true)
+
+    const distance = bot.entity.position.distanceTo(player.position)
+
+    // langsam hingehen
+    if(distance > 3 && distance < 10){
+      bot.setControlState('forward', true)
+
+      setTimeout(()=>{
+        bot.setControlState('forward', false)
+      }, 1200)
+    }
+
+  }, 1500)
+}
+
+/* =============================
+   AUTO SHIELD WHEN HIT
+============================= */
+
+function shieldAI() {
+
+  bot.on('entityHurt', (entity) => {
+    if(entity !== bot.entity) return
+
+    console.log('🛡️ Angegriffen → Blocken!')
+
+    bot.activateItem(true)
+
+    setTimeout(()=>{
+      bot.deactivateItem()
+    }, 2000)
   })
 }
 
-startBot()
+/* =============================
+   AUTO RESPAWN
+============================= */
 
+bot.on('death', () => {
+  console.log('💀 Bot gestorben → Respawn...')
+  setTimeout(() => bot.respawn(), 2000)
+})
+
+}
+
+createBot()
