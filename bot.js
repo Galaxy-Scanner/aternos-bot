@@ -1,57 +1,101 @@
 const mineflayer = require('mineflayer')
 const pvp = require('mineflayer-pvp').plugin
-const { pathfinder, Movements, goals } = require('mineflayer-pathfinder')
+const { pathfinder, Movements } = require('mineflayer-pathfinder')
 
-function createBot() {
+const bot = mineflayer.createBot({
+  host: 'CrayCrim-SMP.aternos.me',
+  port: 25565,
+  username: 'RandomBoto7',
+  version: false
+})
 
-  const bot = mineflayer.createBot({
-    host: "CrayCrim-SMP.aternos.me",
-    port: 25565,
-    username: "RandomBot",
-    version: false
-  })
+bot.loadPlugin(pathfinder)
+bot.loadPlugin(pvp)
 
-  // ✅ WICHTIG: Reihenfolge!
-  bot.loadPlugin(pathfinder)
-  bot.loadPlugin(pvp)
+let registered = false
 
-  bot.once('spawn', () => {
-    console.log("✅ Bot gespawnt")
+bot.once('spawn', () => {
+  console.log('✅ Bot gespawnt')
 
-    const mcData = require('minecraft-data')(bot.version)
-    const defaultMove = new Movements(bot, mcData)
+  const mcData = require('minecraft-data')(bot.version)
+  const movements = new Movements(bot, mcData)
+  bot.pathfinder.setMovements(movements)
 
-    bot.pathfinder.setMovements(defaultMove)
-  })
-
-  // ===== LOGIN (falls Crack Server) =====
-  bot.on('messagestr', (msg) => {
-    if (msg.includes("/login")) {
-      bot.chat("/login deinpasswort")
+  // LoginSecurity
+  setTimeout(() => {
+    if (!registered) {
+      bot.chat('/register 123456 123456')
+      registered = true
+    } else {
+      bot.chat('/login 123456')
     }
-    if (msg.includes("/register")) {
-      bot.chat("/register deinpasswort deinpasswort")
-    }
-  })
+  }, 3000)
+})
 
-  // ===== AUTO PVP WENN GEHITTET =====
-  bot.on('entityHurt', (entity) => {
-    if (entity === bot.entity) {
-      const player = bot.nearestEntity(e => e.type === 'player')
-      if (player) {
-        console.log("⚔️ Werde angegriffen!")
-        bot.pvp.attack(player)
-      }
-    }
-  })
+/*
+   ==========================
+   🧠 PvP KI SYSTEM
+   ==========================
+*/
 
-  // ===== RECONNECT =====
-  bot.on('end', () => {
-    console.log("🔌 Disconnect → reconnect in 5s")
-    setTimeout(createBot, 5000)
-  })
+function getNearestPlayer() {
+  const players = Object.values(bot.players)
+    .filter(p => p.entity && p.username !== bot.username)
 
-  bot.on('error', console.log)
+  if (players.length === 0) return null
+
+  players.sort((a, b) =>
+    bot.entity.position.distanceTo(a.entity.position) -
+    bot.entity.position.distanceTo(b.entity.position)
+  )
+
+  return players[0].entity
 }
 
-createBot()
+let target = null
+
+bot.on('entityHurt', (entity) => {
+  if (entity === bot.entity) {
+    target = getNearestPlayer()
+    if (target) {
+      console.log('⚔️ Gegner erkannt:', target.username)
+      bot.pvp.attack(target)
+    }
+  }
+})
+
+/*
+   Strafing Movement + Tracking
+*/
+bot.on('physicsTick', () => {
+  if (!target) return
+  if (!target.position) return
+
+  bot.lookAt(target.position.offset(0, 1.6, 0), true)
+
+  const dist = bot.entity.position.distanceTo(target.position)
+
+  // Strafing wie echter Spieler
+  if (dist < 3) {
+    bot.setControlState('left', true)
+    bot.setControlState('right', false)
+  } else {
+    bot.setControlState('left', false)
+    bot.setControlState('right', true)
+  }
+
+  // Crit Hits (springen beim Angriff)
+  if (bot.entity.onGround && dist < 3.5) {
+    bot.setControlState('jump', true)
+    setTimeout(() => bot.setControlState('jump', false), 200)
+  }
+})
+
+bot.on('death', () => {
+  target = null
+})
+
+bot.on('end', () => {
+  console.log('🔌 Disconnect → reconnect in 5s...')
+  setTimeout(() => process.exit(0), 5000)
+})
