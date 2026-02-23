@@ -9,7 +9,7 @@ function createBot() {
 const bot = mineflayer.createBot({
   host: 'CrayCrim-SMP.aternos.me',
   port: 25565,
-  username: 'RandomBoto7',
+  username: 'RandomOS',
   version: '1.21.5',
   auth: 'offline'
 })
