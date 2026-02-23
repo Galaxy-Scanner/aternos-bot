@@ -1,6 +1,7 @@
 const mineflayer = require('mineflayer')
+const pvp = require('mineflayer-pvp').plugin
 
-const PASSWORD = "DeinPasswort123" // <<< HIER ÄNDERN
+const PASSWORD = "DeinPasswort123"
 
 function createBot() {
 
@@ -12,87 +13,100 @@ function createBot() {
     auth: 'offline'
   })
 
-  // ===============================
-  // LOGIN / REGISTER SYSTEM
-  // ===============================
+  bot.loadPlugin(pvp)
+
+  // =====================
+  // LOGIN / REGISTER
+  // =====================
   bot.on('messagestr', (msg) => {
-    console.log(msg)
+    const m = msg.toLowerCase()
 
-    const message = msg.toLowerCase()
-
-    // erkennt Register Nachricht
-    if (message.includes('/register')) {
-      console.log("🔐 Registriere...")
+    if (m.includes('/register')) {
       bot.chat(`/register ${PASSWORD} ${PASSWORD}`)
     }
 
-    // erkennt Login Nachricht
-    if (message.includes('/login')) {
-      console.log("🔑 Logge ein...")
+    if (m.includes('/login')) {
       bot.chat(`/login ${PASSWORD}`)
     }
   })
 
-  // ===============================
+  // =====================
   // SPAWN
-  // ===============================
+  // =====================
   bot.on('spawn', () => {
-    console.log('✅ Bot gespawnt')
+    console.log("✅ Bot gespawnt")
 
-    // kleine Wartezeit damit Login durch ist
     setTimeout(() => {
-      randomMovement(bot)
+      startAI(bot)
     }, 5000)
   })
 
-  // ===============================
-  // RANDOM MOVEMENT
-  // ===============================
-  function randomMovement(bot) {
+  // =====================
+  // PVP + MOVEMENT AI
+  // =====================
+  function startAI(bot) {
+
     setInterval(() => {
+
       if (!bot.entity) return
 
-      // alles stoppen
-      bot.clearControlStates()
+      // Ziel suchen (Spieler oder Mob)
+      const target = bot.nearestEntity(entity =>
+        entity.type === 'player' && entity.username !== bot.username ||
+        entity.type === 'mob'
+      )
 
-      const moves = ['forward', 'back', 'left', 'right']
-      const move = moves[Math.floor(Math.random() * moves.length)]
-      bot.setControlState(move, true)
+      if (!target) {
+        bot.clearControlStates()
+        randomLook(bot)
+        return
+      }
 
-      // springen
-      if (Math.random() < 0.4) {
+      // Gegner anschauen (Tracking)
+      bot.lookAt(target.position.offset(0, 1.5, 0), true)
+
+      const distance = bot.entity.position.distanceTo(target.position)
+
+      // Strafing Bewegung
+      bot.setControlState('forward', distance > 2)
+
+      if (Math.random() < 0.5) {
+        bot.setControlState('left', true)
+        bot.setControlState('right', false)
+      } else {
+        bot.setControlState('right', true)
+        bot.setControlState('left', false)
+      }
+
+      // Sprint
+      bot.setControlState('sprint', true)
+
+      // Crit Hit (springen beim Angriff)
+      if (distance < 3) {
         bot.setControlState('jump', true)
-        setTimeout(() => bot.setControlState('jump', false), 400)
+        setTimeout(() => bot.setControlState('jump', false), 250)
+        bot.pvp.attack(target)
       }
 
-      // sprint
-      if (Math.random() < 0.3) {
-        bot.setControlState('sprint', true)
-        setTimeout(() => bot.setControlState('sprint', false), 2000)
-      }
-
-      // random schauen
-      const yaw = Math.random() * Math.PI * 2
-      const pitch = (Math.random() - 0.5) * 0.6
-      bot.look(yaw, pitch, true)
-
-    }, 3000)
+    }, 700)
   }
 
-  // ===============================
+  function randomLook(bot) {
+    const yaw = Math.random() * Math.PI * 2
+    const pitch = (Math.random() - 0.5) * 0.6
+    bot.look(yaw, pitch, true)
+  }
+
+  // =====================
   // RECONNECT SYSTEM
-  // ===============================
+  // =====================
   bot.on('end', () => {
-    console.log('🔌 Disconnect → reconnect in 5s...')
+    console.log("🔌 Disconnect → reconnect in 5s")
     setTimeout(createBot, 5000)
   })
 
-  bot.on('kicked', (reason) => {
-    console.log('❌ Kick:', reason)
-  })
-
-  bot.on('error', (err) => {
-    console.log('⚠️ Error:', err.message)
+  bot.on('error', err => {
+    console.log("⚠️", err.message)
   })
 }
 
