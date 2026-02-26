@@ -1,192 +1,163 @@
 const mineflayer = require('mineflayer')
-const pvp = require('mineflayer-pvp').plugin
-const { pathfinder, Movements, goals } = require('mineflayer-pathfinder')
+const { pathfinder, Movements } = require('mineflayer-pathfinder')
 
 const PASSWORD = "DeinPasswort123"
 
 function createBot() {
 
-const bot = mineflayer.createBot({
-  host: 'CrayCrim-SMP.aternos.me',
-  port: 25565,
-  username: 'RandomOS',
-  version: '1.21.5',
-  auth: 'offline'
-})
+  const bot = mineflayer.createBot({
+    host: 'CrayCrim-SMP.aternos.me',
+    port: 25565,
+    username: 'RandomBot',
+    version: '1.21.5',
+    auth: 'offline'
+  })
 
-bot.loadPlugin(pathfinder)
-bot.loadPlugin(pvp)
+  bot.loadPlugin(pathfinder)
 
-let defaultMove
-let target = null
-let lastAttack = 0
-let knockbackPause = false
+  let target = null
+  let lastAttack = 0
+  let hurtTime = 0
 
-/* ================= LOGIN ================= */
+  // ================= LOGIN =================
+  bot.on('messagestr', (msg) => {
+    const m = msg.toLowerCase()
 
-bot.on('messagestr', (msg) => {
-  const m = msg.toLowerCase()
+    if (m.includes('/register'))
+      bot.chat(`/register ${PASSWORD} ${PASSWORD}`)
 
-  if (m.includes('/register'))
-    bot.chat(`/register ${PASSWORD} ${PASSWORD}`)
+    if (m.includes('/login'))
+      bot.chat(`/login ${PASSWORD}`)
+  })
 
-  if (m.includes('/login'))
-    bot.chat(`/login ${PASSWORD}`)
-})
+  // ================= SPAWN =================
+  bot.once('spawn', () => {
+    console.log("✅ Bot gespawnt")
 
-/* ================= SPAWN ================= */
+    const movements = new Movements(bot)
+    bot.pathfinder.setMovements(movements)
 
-bot.once('spawn', () => {
-  console.log("✅ Bot gespawnt")
+    // Anti timeout (SEHR wichtig)
+    setInterval(() => {
+      if (!bot.entity) return
+      bot.look(
+        bot.entity.yaw + (Math.random() - 0.5) * 0.02,
+        bot.entity.pitch,
+        true
+      )
+    }, 4000)
+  })
 
-  defaultMove = new Movements(bot)
-  bot.pathfinder.setMovements(defaultMove)
+  // ================= TARGET FINDER =================
+  function getTarget() {
 
-  setInterval(randomLook, 2500)
-})
+    const players = Object.values(bot.players)
+      .filter(p => p.entity && p.username !== bot.username)
+      .map(p => p.entity)
 
-/* ================= HUMAN LOOK ================= */
+    const mobs = Object.values(bot.entities)
+      .filter(e => e.type === 'mob')
 
-function randomLook() {
-  if (!bot.entity) return
+    const all = [...players, ...mobs]
+    if (all.length === 0) return null
 
-  const yaw = bot.entity.yaw + (Math.random()-0.5)*0.4
-  const pitch = (Math.random()-0.5)*0.2
-
-  bot.look(yaw, pitch, true)
-}
-
-/* ================= TARGET FIND ================= */
-
-function getNearestTarget() {
-
-  const players = Object.values(bot.players)
-    .filter(p => p.entity && p.username !== bot.username)
-
-  const mobs = Object.values(bot.entities)
-    .filter(e => e.type === 'mob')
-
-  const all = [
-    ...players.map(p=>p.entity),
-    ...mobs
-  ]
-
-  if (!all.length) return null
-
-  all.sort((a,b)=>
-    bot.entity.position.distanceTo(a.position) -
-    bot.entity.position.distanceTo(b.position)
-  )
-
-  return all[0]
-}
-
-/* ================= DAMAGE REACTION ================= */
-
-bot.on('entityHurt', (entity)=>{
-  if(entity === bot.entity){
-    knockbackPause = true
-    setTimeout(()=>knockbackPause=false,400)
-
-    target = getNearestTarget()
-  }
-})
-
-/* ================= COOLDOWN ================= */
-
-function getCooldown(){
-  const item = bot.heldItem
-  if(!item) return 350
-
-  if(item.name.includes("axe")) return 1000
-  if(item.name.includes("sword")) return 600
-
-  return 350
-}
-
-function canAttack(){
-  return Date.now() - lastAttack > getCooldown()
-}
-
-/* ================= HUMAN AIM CHECK ================= */
-
-function isLookingAt(target){
-
-  const dir = target.position.minus(bot.entity.position).normalize()
-  const view = bot.entity.yaw
-
-  const dx = Math.sin(view)
-  const dz = Math.cos(view)
-
-  const dot = dx*dir.x + dz*dir.z
-
-  return dot > 0.80 // muss wirklich hinschauen
-}
-
-/* ================= MAIN PVP AI ================= */
-
-bot.on('physicsTick', async () => {
-
-  if(!bot.entity) return
-
-  // keepalive movement
-  bot.look(bot.entity.yaw + 0.001, bot.entity.pitch, true)
-
-  if(!target || !target.position){
-    target = getNearestTarget()
-    return
+    return all.sort((a,b)=>
+      bot.entity.position.distanceTo(a.position) -
+      bot.entity.position.distanceTo(b.position)
+    )[0]
   }
 
-  const dist = bot.entity.position.distanceTo(target.position)
+  // ================= DAMAGE (ECHTES KB) =================
+  bot.on('entityHurt', (e) => {
+    if (e === bot.entity) {
+      hurtTime = Date.now()
+      target = getTarget()
+    }
+  })
 
-  // langsam schauen (kein Hacker Snap)
-  bot.lookAt(target.position.offset(0,1.5,0), false)
+  // ================= WEAPON COOLDOWN =================
+  function getCooldown() {
+    const item = bot.heldItem
+    if (!item) return 500
 
-  if(knockbackPause) return
+    if (item.name.includes("axe")) return 1100
+    if (item.name.includes("sword")) return 600
 
-  /* movement */
-  if(dist > 3){
-    bot.setControlState('forward', true)
-  } else {
-    bot.setControlState('forward', false)
+    return 500
   }
 
-  // strafing
-  bot.setControlState('left', Math.random()<0.5)
-  bot.setControlState('right', Math.random()>=0.5)
-
-  // W-Tap
-  if(Math.random()<0.07){
-    bot.setControlState('forward', false)
-    setTimeout(()=>bot.setControlState('forward', true),120)
+  function canHit() {
+    return Date.now() - lastAttack > getCooldown()
   }
 
-  /* attack only if looking */
-  if(dist < 3.2 && canAttack() && isLookingAt(target)){
+  // ================= LOOK CHECK =================
+  function lookingAt(entity) {
+    const dir = entity.position.minus(bot.entity.position).normalize()
 
-    // crit attempt
-    if(bot.entity.onGround){
-      bot.setControlState('jump', true)
-      setTimeout(()=>bot.setControlState('jump',false),120)
+    const yaw = bot.entity.yaw
+    const viewX = Math.sin(yaw)
+    const viewZ = Math.cos(yaw)
+
+    const dot = viewX * dir.x + viewZ * dir.z
+    return dot > 0.82 // muss wirklich schauen
+  }
+
+  // ================= MAIN PVP LOOP =================
+  bot.on('physicsTick', () => {
+
+    if (!bot.entity) return
+
+    if (!target || !target.position)
+      target = getTarget()
+
+    if (!target) return
+
+    const dist = bot.entity.position.distanceTo(target.position)
+
+    // echtes Tracking (kein Snap)
+    bot.lookAt(target.position.offset(0,1.5,0), false)
+
+    // Knockback Pause (kein AntiKB)
+    if (Date.now() - hurtTime < 450) {
+      bot.clearControlStates()
+      return
     }
 
-    bot.attack(target)
-    lastAttack = Date.now()
-  }
+    // Movement
+    bot.setControlState('forward', dist > 2.7)
 
-})
+    // Strafing (menschlich)
+    bot.setControlState('left', Math.random() < 0.5)
+    bot.setControlState('right', !bot.controlState.left)
 
-/* ================= RECONNECT ================= */
+    // W-Tap
+    if (Math.random() < 0.05) {
+      bot.setControlState('forward', false)
+      setTimeout(()=>bot.setControlState('forward', true),120)
+    }
 
-bot.on('end', ()=>{
-  console.log("🔌 reconnect in 5s")
-  setTimeout(createBot,5000)
-})
+    // Crit Jump manchmal
+    if (Math.random() < 0.08 && dist < 3)
+      bot.setControlState('jump', true)
+    else
+      bot.setControlState('jump', false)
 
-bot.on('error', err=>{
-  console.log("⚠️", err.message)
-})
+    // Angriff
+    if (dist < 3 && lookingAt(target) && canHit()) {
+      bot.attack(target)
+      lastAttack = Date.now()
+    }
+  })
 
+  // ================= RECONNECT =================
+  bot.on('end', () => {
+    console.log("🔌 Reconnect in 5s...")
+    setTimeout(createBot, 5000)
+  })
+
+  bot.on('error', err =>
+    console.log("⚠️", err.message)
+  )
 }
 
 createBot()
