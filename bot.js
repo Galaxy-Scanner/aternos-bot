@@ -9,7 +9,7 @@ function createBot() {
     host: 'CrayCrim-SMP.aternos.me',
     port: 25565,
     username: 'RandomBot',
-    version: '1.21.5',
+    version: false, // WICHTIG → auto detect = weniger kicks
     auth: 'offline'
   })
 
@@ -17,10 +17,10 @@ function createBot() {
 
   let target = null
   let lastAttack = 0
-  let hurtTime = 0
+  let hurtPause = 0
 
   // ================= LOGIN =================
-  bot.on('messagestr', (msg) => {
+  bot.on('messagestr', msg => {
     const m = msg.toLowerCase()
 
     if (m.includes('/register'))
@@ -37,116 +37,111 @@ function createBot() {
     const movements = new Movements(bot)
     bot.pathfinder.setMovements(movements)
 
-    // Anti timeout (SEHR wichtig)
+    startKeepAlive()
+    startPvP()
+  })
+
+  // ================= KEEP ALIVE FIX =================
+  function startKeepAlive() {
+
     setInterval(() => {
       if (!bot.entity) return
+
+      // mini head movement (ANTI TIMEOUT)
       bot.look(
-        bot.entity.yaw + (Math.random() - 0.5) * 0.02,
+        bot.entity.yaw + (Math.random()-0.5)*0.01,
         bot.entity.pitch,
         true
       )
-    }, 4000)
-  })
 
-  // ================= TARGET FINDER =================
+      // mini movement packet
+      bot.setControlState('forward', true)
+      setTimeout(()=>bot.setControlState('forward', false),120)
+
+    }, 2500)
+  }
+
+  // ================= TARGET FIND =================
   function getTarget() {
 
-    const players = Object.values(bot.players)
-      .filter(p => p.entity && p.username !== bot.username)
-      .map(p => p.entity)
+    let entities = Object.values(bot.entities)
+      .filter(e =>
+        e !== bot.entity &&
+        (e.type === 'player' || e.type === 'mob')
+      )
 
-    const mobs = Object.values(bot.entities)
-      .filter(e => e.type === 'mob')
+    if (!entities.length) return null
 
-    const all = [...players, ...mobs]
-    if (all.length === 0) return null
-
-    return all.sort((a,b)=>
+    return entities.sort((a,b)=>
       bot.entity.position.distanceTo(a.position) -
       bot.entity.position.distanceTo(b.position)
     )[0]
   }
 
-  // ================= DAMAGE (ECHTES KB) =================
-  bot.on('entityHurt', (e) => {
-    if (e === bot.entity) {
-      hurtTime = Date.now()
-      target = getTarget()
-    }
-  })
-
-  // ================= WEAPON COOLDOWN =================
-  function getCooldown() {
+  // ================= COOLDOWN =================
+  function cooldown() {
     const item = bot.heldItem
-    if (!item) return 500
-
+    if (!item) return 600
     if (item.name.includes("axe")) return 1100
     if (item.name.includes("sword")) return 600
-
-    return 500
+    return 600
   }
 
-  function canHit() {
-    return Date.now() - lastAttack > getCooldown()
+  // ================= PVP LOOP =================
+  function startPvP() {
+
+    setInterval(() => {
+
+      if (!bot.entity) return
+
+      if (!target || !target.position)
+        target = getTarget()
+
+      if (!target) return
+
+      const dist = bot.entity.position.distanceTo(target.position)
+
+      // smooth aim (KEIN aura snap)
+      bot.lookAt(target.position.offset(0,1.5,0), false)
+
+      // echtes Knockback erlauben
+      if (Date.now() - hurtPause < 400) {
+        bot.clearControlStates()
+        return
+      }
+
+      // movement
+      bot.setControlState('forward', dist > 2.5)
+
+      // strafing
+      bot.setControlState('left', Math.random() < 0.5)
+      bot.setControlState('right', !bot.controlState.left)
+
+      // W-tap
+      if (Math.random() < 0.07) {
+        bot.setControlState('forward', false)
+        setTimeout(()=>bot.setControlState('forward', true),120)
+      }
+
+      // crit jump
+      if (Math.random() < 0.1 && dist < 3)
+        bot.setControlState('jump', true)
+      else
+        bot.setControlState('jump', false)
+
+      // ATTACK
+      if (dist < 3 && Date.now()-lastAttack > cooldown()) {
+        bot.attack(target)
+        lastAttack = Date.now()
+      }
+
+    }, 120)
   }
 
-  // ================= LOOK CHECK =================
-  function lookingAt(entity) {
-    const dir = entity.position.minus(bot.entity.position).normalize()
-
-    const yaw = bot.entity.yaw
-    const viewX = Math.sin(yaw)
-    const viewZ = Math.cos(yaw)
-
-    const dot = viewX * dir.x + viewZ * dir.z
-    return dot > 0.82 // muss wirklich schauen
-  }
-
-  // ================= MAIN PVP LOOP =================
-  bot.on('physicsTick', () => {
-
-    if (!bot.entity) return
-
-    if (!target || !target.position)
-      target = getTarget()
-
-    if (!target) return
-
-    const dist = bot.entity.position.distanceTo(target.position)
-
-    // echtes Tracking (kein Snap)
-    bot.lookAt(target.position.offset(0,1.5,0), false)
-
-    // Knockback Pause (kein AntiKB)
-    if (Date.now() - hurtTime < 450) {
-      bot.clearControlStates()
-      return
-    }
-
-    // Movement
-    bot.setControlState('forward', dist > 2.7)
-
-    // Strafing (menschlich)
-    bot.setControlState('left', Math.random() < 0.5)
-    bot.setControlState('right', !bot.controlState.left)
-
-    // W-Tap
-    if (Math.random() < 0.05) {
-      bot.setControlState('forward', false)
-      setTimeout(()=>bot.setControlState('forward', true),120)
-    }
-
-    // Crit Jump manchmal
-    if (Math.random() < 0.08 && dist < 3)
-      bot.setControlState('jump', true)
-    else
-      bot.setControlState('jump', false)
-
-    // Angriff
-    if (dist < 3 && lookingAt(target) && canHit()) {
-      bot.attack(target)
-      lastAttack = Date.now()
-    }
+  // knockback detect
+  bot.on('entityHurt', e=>{
+    if(e === bot.entity)
+      hurtPause = Date.now()
   })
 
   // ================= RECONNECT =================
